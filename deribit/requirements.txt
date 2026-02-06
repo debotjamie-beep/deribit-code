@@ -1,0 +1,16 @@
+# Deribit API - Python Dependencies
+
+# Required: HTTP client for API requests
+requests>=2.31.0
+
+# Note: credentials_manager.py is included (no extra install needed)
+# Supports: credentials.json, environment variables, .env files
+
+# Optional: For async operations (advanced usage)
+# aiohttp>=3.9.0
+
+# Optional: For WebSocket support (advanced usage)
+# websocket-client>=1.6.0
+
+# Optional: For better JSON handling
+# ujson>=5.8.0
