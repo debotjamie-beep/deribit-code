@@ -108,8 +108,8 @@ pip install git+https://github.com/YOUR_USERNAME/YOUR_REPO.git#subdirectory=deri
 ## 📝 Your Credentials
 
 **Test Environment:**
-- Client ID: `JdEwxeAI`
-- Client Secret: `UnTGIsZP20_PqSu0qwYrZVpJb0rE4LdXQ45SfkIhhO0`
+- Client ID: `YOUR_CLIENT_ID`
+- Client Secret: `YOUR_CLIENT_SECRET`
 
 ⚠️ **Important:** These are embedded in `test_with_credentials.py` for testing only. For production, use environment variables!
 
@@ -122,8 +122,8 @@ Before uploading, test on your machine:
 pip install requests
 
 # 2. Set credentials (optional, already in test file)
-export DERIBIT_CLIENT_ID="JdEwxeAI"
-export DERIBIT_CLIENT_SECRET="UnTGIsZP20_PqSu0qwYrZVpJb0rE4LdXQ45SfkIhhO0"
+export DERIBIT_CLIENT_ID="YOUR_CLIENT_ID"
+export DERIBIT_CLIENT_SECRET="YOUR_CLIENT_SECRET"
 
 # 3. Run examples
 python simple_example.py
