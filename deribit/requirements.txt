@@ -1,5 +1,3 @@
-# Deribit API - Python Dependencies
-
 # Required: HTTP client for API requests
 requests>=2.31.0
 
@@ -11,6 +9,3 @@ requests>=2.31.0
 
 # Optional: For WebSocket support (advanced usage)
 # websocket-client>=1.6.0
-
-# Optional: For better JSON handling
-# ujson>=5.8.0
