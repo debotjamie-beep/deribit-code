@@ -6,8 +6,8 @@ Your concern was 100% valid! I've completely removed all hardcoded test credenti
 
 ### ❌ Before (INSECURE):
 ```python
-CLIENT_ID = "JdEwxeAI"
-CLIENT_SECRET = "UnTGIsZP20_PqSu0qwYrZVpJb0rE4LdXQ45SfkIhhO0"
+CLIENT_ID = "YOUR_CLIENT_ID"
+CLIENT_SECRET = "YOUR_CLIENT_SECRET"
 ```
 
 ### ✅ After (SECURE):
