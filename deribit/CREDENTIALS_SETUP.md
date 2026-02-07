@@ -252,8 +252,8 @@ python -c "from deribit_auth import DeribitAuth; auth = DeribitAuth(); print('âœ
 ### credentials.json
 ```json
 {
-  "client_id": "AbCd1234",
-  "client_secret": "xYz789-VerySecretKey-123",
+  "client_id": "YOUR_CLIENT_ID",
+  "client_secret": "YOUR_CLIENT_SECRET",
   "test_mode": true,
   "notes": "Test environment credentials"
 }
@@ -262,8 +262,8 @@ python -c "from deribit_auth import DeribitAuth; auth = DeribitAuth(); print('âœ
 ### .env
 ```bash
 # Deribit Test API Credentials
-DERIBIT_CLIENT_ID=AbCd1234
-DERIBIT_CLIENT_SECRET=xYz789-VerySecretKey-123
+DERIBIT_CLIENT_ID=YOUR_CLIENT_ID
+DERIBIT_CLIENT_SECRET=YOUR_CLIENT_SECRET
 
 # Optional
 DERIBIT_TEST_MODE=true
