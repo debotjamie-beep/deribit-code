@@ -6,11 +6,11 @@ cryptocurrency derivatives exchange.
 
 Usage:
     from deribit import DeribitAuth, DeribitTrader
-    
+
     # Authenticate
     auth = DeribitAuth(test_mode=True)
     auth.authenticate_credentials(scope="trade:read_write")
-    
+
     # Trade
     trader = DeribitTrader(auth)
     ticker = trader.get_ticker("BTC-PERPETUAL")
