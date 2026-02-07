@@ -116,8 +116,8 @@ from deribit import DeribitAuth, DeribitTrader
 
 # Authenticate
 auth = DeribitAuth(
-    client_id="JdEwxeAI",
-    client_secret="UnTGIsZP20_PqSu0qwYrZVpJb0rE4LdXQ45SfkIhhO0",
+    client_id="YOUR_CLIENT_ID",
+    client_secret="YOUR_CLIENT_SECRET",
     test_mode=True
 )
 auth.authenticate_credentials()
