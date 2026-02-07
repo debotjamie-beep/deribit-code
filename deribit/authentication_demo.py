@@ -1,18 +1,3 @@
-"""
-Deribit Authentication Demonstration
-Shows the complete authentication workflow
-
-This is a demonstration script that shows HOW authentication works,
-but uses placeholder credentials for illustration.
-
-To actually test authentication, set up your credentials first:
-1. Create credentials.json file (see credentials.json.template)
-2. Set environment variables
-3. Create .env file
-
-Then run: python test_with_credentials.py
-"""
-
 import time
 import hmac
 import hashlib
@@ -208,20 +193,20 @@ print()
 print("Python Usage:")
 print("""
   from deribit_auth import DeribitAuth
-  
+
   # Credentials loaded automatically from:
   # - credentials.json OR
-  # - Environment variables OR  
+  # - Environment variables OR
   # - .env file
-  
+
   auth = DeribitAuth(test_mode=True)
-  
+
   # Authenticate
   auth.authenticate_credentials(scope="trade:read_write")
-  
+
   # Get headers for API calls
   headers = auth.get_headers()
-  
+
   # Make API request
   import requests
   response = requests.get(

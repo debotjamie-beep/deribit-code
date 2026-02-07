@@ -20,126 +20,128 @@ from deribit_auth import DeribitAuth
 class DeribitTrader:
     """
     Deribit Trading Interface
-    
+
     Provides high-level trading functions using authenticated API access.
     """
-    
+
     def __init__(self, auth: DeribitAuth):
         """
         Initialize trader with authentication
-        
+
         Args:
             auth: Authenticated DeribitAuth instance
         """
         self.auth = auth
         self.base_url = auth.base_url
-    
+
     def _make_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Make authenticated API request
-        
+
         Args:
             method: API method name (e.g., 'private/buy')
             params: Request parameters
-            
+
         Returns:
             API response result
         """
         url = f"{self.base_url}/api/v2/{method}"
-        
-        response = requests.get(
+
+        headers = self.auth.get_headers() if method.startswith("private/") else {}
+
+        response = self.auth.session.get(
             url,
             params=params,
-            headers=self.auth.get_headers()
+            headers=headers
         )
         response.raise_for_status()
-        
+
         result = response.json()
-        
+
         if "result" in result:
             return result["result"]
         elif "error" in result:
             raise Exception(f"API Error: {result['error']}")
         else:
             raise Exception(f"Unexpected response: {result}")
-    
+
     # =================================================================
     # ACCOUNT INFORMATION
     # =================================================================
-    
+
     def get_account_summary(self, currency: str = "BTC", extended: bool = True) -> Dict[str, Any]:
         """
         Get account summary
-        
+
         Args:
             currency: Currency (BTC, ETH, USDC, etc.)
             extended: Include additional fields
-            
+
         Returns:
             Account summary with balance, equity, etc.
         """
         return self._make_request(
             "private/get_account_summary",
-            {"currency": currency, "extended": str(extended).lower()}
+            {"currency": currency, "extended": extended}
         )
-    
+
     def get_positions(self, currency: str = "BTC", kind: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get current positions
-        
+
         Args:
             currency: Currency (BTC, ETH, etc.)
             kind: Instrument kind (future, option, spot, etc.)
-            
+
         Returns:
             List of open positions
         """
         params = {"currency": currency}
         if kind:
             params["kind"] = kind
-        
+
         return self._make_request("private/get_positions", params)
-    
+
     def get_subaccounts(self) -> List[Dict[str, Any]]:
         """
         Get list of subaccounts
-        
+
         Returns:
             List of subaccounts
         """
         return self._make_request("private/get_subaccounts", {})
-    
+
     # =================================================================
     # MARKET DATA
     # =================================================================
-    
-    def get_instruments(self, currency: str = "BTC", kind: Optional[str] = None, 
+
+    def get_instruments(self, currency: str = "BTC", kind: Optional[str] = None,
                         expired: bool = False) -> List[Dict[str, Any]]:
         """
         Get available instruments
-        
+
         Args:
             currency: Currency (BTC, ETH, etc.)
             kind: Instrument kind (future, option, spot)
             expired: Include expired instruments
-            
+
         Returns:
             List of instruments
         """
-        params = {"currency": currency, "expired": str(expired).lower()}
+        params = {"currency": currency, "expired": expired}
         if kind:
             params["kind"] = kind
-        
+
         return self._make_request("public/get_instruments", params)
-    
+
     def get_order_book(self, instrument_name: str, depth: int = 10) -> Dict[str, Any]:
         """
         Get order book for an instrument
-        
+
         Args:
             instrument_name: Instrument name (e.g., 'BTC-PERPETUAL')
             depth: Order book depth
-            
+
         Returns:
             Order book with bids and asks
         """
@@ -147,14 +149,14 @@ class DeribitTrader:
             "public/get_order_book",
             {"instrument_name": instrument_name, "depth": depth}
         )
-    
+
     def get_ticker(self, instrument_name: str) -> Dict[str, Any]:
         """
         Get ticker data for an instrument
-        
+
         Args:
             instrument_name: Instrument name (e.g., 'BTC-PERPETUAL')
-            
+
         Returns:
             Ticker data with current price, volume, etc.
         """
@@ -162,11 +164,11 @@ class DeribitTrader:
             "public/ticker",
             {"instrument_name": instrument_name}
         )
-    
+
     # =================================================================
     # TRADING - PLACING ORDERS
     # =================================================================
-    
+
     def buy(
         self,
         instrument_name: str,
@@ -179,7 +181,7 @@ class DeribitTrader:
     ) -> Dict[str, Any]:
         """
         Place a buy order
-        
+
         Args:
             instrument_name: Instrument name (e.g., 'BTC-PERPETUAL')
             amount: Order amount in contracts
@@ -188,27 +190,27 @@ class DeribitTrader:
             post_only: Post-only order (only maker)
             reduce_only: Reduce-only order (close position only)
             label: User-defined label
-            
+
         Returns:
             Order details including order_id
         """
-        params = {
+        params: Dict[str, Any] = {
             "instrument_name": instrument_name,
             "amount": amount,
             "type": order_type,
         }
-        
-        if price:
+
+        if price is not None:
             params["price"] = price
         if post_only:
-            params["post_only"] = "true"
+            params["post_only"] = True
         if reduce_only:
-            params["reduce_only"] = "true"
+            params["reduce_only"] = True
         if label:
             params["label"] = label
-        
+
         return self._make_request("private/buy", params)
-    
+
     def sell(
         self,
         instrument_name: str,
@@ -221,7 +223,7 @@ class DeribitTrader:
     ) -> Dict[str, Any]:
         """
         Place a sell order
-        
+
         Args:
             instrument_name: Instrument name (e.g., 'BTC-PERPETUAL')
             amount: Order amount in contracts
@@ -230,31 +232,31 @@ class DeribitTrader:
             post_only: Post-only order (only maker)
             reduce_only: Reduce-only order (close position only)
             label: User-defined label
-            
+
         Returns:
             Order details including order_id
         """
-        params = {
+        params: Dict[str, Any] = {
             "instrument_name": instrument_name,
             "amount": amount,
             "type": order_type,
         }
-        
-        if price:
+
+        if price is not None:
             params["price"] = price
         if post_only:
-            params["post_only"] = "true"
+            params["post_only"] = True
         if reduce_only:
-            params["reduce_only"] = "true"
+            params["reduce_only"] = True
         if label:
             params["label"] = label
-        
+
         return self._make_request("private/sell", params)
-    
+
     # =================================================================
     # ORDER MANAGEMENT
     # =================================================================
-    
+
     def get_open_orders(
         self,
         currency: Optional[str] = None,
@@ -263,32 +265,33 @@ class DeribitTrader:
     ) -> List[Dict[str, Any]]:
         """
         Get open orders
-        
+
         Args:
             currency: Filter by currency (BTC, ETH, etc.)
             kind: Filter by kind (future, option)
             instrument_name: Filter by specific instrument
-            
+
         Returns:
             List of open orders
         """
-        params = {}
-        if currency:
-            params["currency"] = currency
-        if kind:
-            params["kind"] = kind
         if instrument_name:
-            params["instrument_name"] = instrument_name
-        
-        return self._make_request("private/get_open_orders", params)
-    
+            params: Dict[str, Any] = {"instrument_name": instrument_name}
+            if kind:
+                params["type"] = kind
+            return self._make_request("private/get_open_orders_by_instrument", params)
+        else:
+            params = {"currency": currency or "BTC"}
+            if kind:
+                params["kind"] = kind
+            return self._make_request("private/get_open_orders_by_currency", params)
+
     def cancel_order(self, order_id: str) -> Dict[str, Any]:
         """
         Cancel an order
-        
+
         Args:
             order_id: Order ID to cancel
-            
+
         Returns:
             Cancelled order details
         """
@@ -296,32 +299,34 @@ class DeribitTrader:
             "private/cancel",
             {"order_id": order_id}
         )
-    
-    def cancel_all_orders(self, currency: Optional[str] = None, 
+
+    def cancel_all_orders(self, currency: Optional[str] = None,
                           kind: Optional[str] = None,
                           instrument_name: Optional[str] = None) -> int:
         """
-        Cancel all orders
-        
+        Cancel all orders, optionally filtered by currency or instrument.
+
         Args:
             currency: Filter by currency
             kind: Filter by kind
             instrument_name: Filter by specific instrument
-            
+
         Returns:
             Number of cancelled orders
         """
-        params = {}
-        if currency:
-            params["currency"] = currency
-        if kind:
-            params["kind"] = kind
         if instrument_name:
-            params["instrument_name"] = instrument_name
-        
-        result = self._make_request("private/cancel_all", params)
-        return result
-    
+            params: Dict[str, Any] = {"instrument_name": instrument_name}
+            if kind:
+                params["type"] = kind
+            return self._make_request("private/cancel_all_by_instrument", params)
+        elif currency:
+            params = {"currency": currency}
+            if kind:
+                params["kind"] = kind
+            return self._make_request("private/cancel_all_by_currency", params)
+        else:
+            return self._make_request("private/cancel_all", {})
+
     def edit_order(
         self,
         order_id: str,
@@ -330,12 +335,12 @@ class DeribitTrader:
     ) -> Dict[str, Any]:
         """
         Edit an existing order
-        
+
         Args:
             order_id: Order ID to edit
             amount: New amount
             price: New price
-            
+
         Returns:
             Updated order details
         """
@@ -347,11 +352,11 @@ class DeribitTrader:
                 "price": price
             }
         )
-    
+
     # =================================================================
     # POSITION MANAGEMENT
     # =================================================================
-    
+
     def close_position(
         self,
         instrument_name: str,
@@ -360,28 +365,28 @@ class DeribitTrader:
     ) -> Dict[str, Any]:
         """
         Close a position
-        
+
         Args:
             instrument_name: Instrument name
             order_type: Order type for closing ('market' or 'limit')
             price: Limit price (for limit orders)
-            
+
         Returns:
             Order details
         """
-        params = {
+        params: Dict[str, Any] = {
             "instrument_name": instrument_name,
             "type": order_type
         }
-        if price:
+        if price is not None:
             params["price"] = price
-        
+
         return self._make_request("private/close_position", params)
-    
+
     # =================================================================
     # TRADE HISTORY
     # =================================================================
-    
+
     def get_user_trades(
         self,
         currency: Optional[str] = None,
@@ -390,22 +395,27 @@ class DeribitTrader:
     ) -> List[Dict[str, Any]]:
         """
         Get user trade history
-        
+
         Args:
             currency: Filter by currency
             instrument_name: Filter by instrument
             count: Number of trades to return
-            
+
         Returns:
             List of trades
         """
-        params = {"count": count}
-        if currency:
-            params["currency"] = currency
         if instrument_name:
-            params["instrument_name"] = instrument_name
-        
-        return self._make_request("private/get_user_trades_by_currency", params)
+            params: Dict[str, Any] = {
+                "instrument_name": instrument_name,
+                "count": count
+            }
+            return self._make_request("private/get_user_trades_by_instrument", params)
+        else:
+            params = {
+                "currency": currency or "BTC",
+                "count": count
+            }
+            return self._make_request("private/get_user_trades_by_currency", params)
 
 
 def main():
@@ -415,14 +425,14 @@ def main():
     print("=" * 70)
     print("Deribit Trading Functions Demo")
     print("=" * 70)
-    
+
     # Initialize authentication
     auth = DeribitAuth(test_mode=True)
     auth.authenticate_credentials(scope="trade:read_write session:trading_demo")
-    
+
     # Initialize trader
     trader = DeribitTrader(auth)
-    
+
     # =================================================================
     # EXAMPLE 1: Get Account Information
     # =================================================================
@@ -436,7 +446,7 @@ def main():
         print(f"Available Funds: {summary.get('available_funds')} BTC")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # =================================================================
     # EXAMPLE 2: Get Market Data
     # =================================================================
@@ -451,7 +461,7 @@ def main():
         print(f"Ask: ${ticker.get('best_ask_price')}")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # =================================================================
     # EXAMPLE 3: Get Available Instruments
     # =================================================================
@@ -461,10 +471,10 @@ def main():
         instruments = trader.get_instruments(currency="BTC", kind="future")
         print(f"Found {len(instruments)} futures")
         for inst in instruments[:5]:  # Show first 5
-            print(f"  - {inst['instrument_name']}: ${inst.get('mark_price', 'N/A')}")
+            print(f"  - {inst['instrument_name']}")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # =================================================================
     # EXAMPLE 4: Get Order Book
     # =================================================================
@@ -480,7 +490,7 @@ def main():
             print(f"  ${bid[0]} x {bid[1]} contracts")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # =================================================================
     # EXAMPLE 5: Get Positions
     # =================================================================
@@ -500,7 +510,7 @@ def main():
             print("No open positions")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # =================================================================
     # EXAMPLE 6: Get Open Orders
     # =================================================================
@@ -521,7 +531,7 @@ def main():
             print("No open orders")
     except Exception as e:
         print(f"Error: {e}")
-    
+
     # =================================================================
     # EXAMPLE 7: PLACE ORDER (Commented out for safety)
     # =================================================================
@@ -543,7 +553,7 @@ def main():
     print("# # Cancel the order")
     print("# trader.cancel_order(order['order_id'])")
     print("# print(\"Order cancelled\")")
-    
+
     print("\n" + "=" * 70)
     print("Demo completed!")
     print("=" * 70)
