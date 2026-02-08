@@ -32,6 +32,13 @@ try:
 except ImportError:
     CREDENTIALS_MANAGER_AVAILABLE = False
 
+# Try to import logger (optional)
+try:
+    from deribit_logger import DeribitLogger
+    LOGGER_AVAILABLE = True
+except ImportError:
+    LOGGER_AVAILABLE = False
+
 
 class DeribitAuth:
     """
@@ -48,7 +55,8 @@ class DeribitAuth:
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
         test_mode: bool = True,
-        credentials_file: Optional[str] = None
+        credentials_file: Optional[str] = None,
+        logger: Optional["DeribitLogger"] = None,
     ):
         """
         Initialize Deribit Authentication
@@ -64,20 +72,35 @@ class DeribitAuth:
             client_secret: Your Deribit API Client Secret (optional if using other methods)
             test_mode: Use test environment (default: True)
             credentials_file: Custom path to credentials JSON file
+            logger: Optional DeribitLogger instance for audit logging
         """
+        self.logger = logger
+        self._credentials_source = None
+
         # Try to load credentials from various sources
         if client_id and client_secret:
-            # Direct parameters provided
             self.client_id = client_id
             self.client_secret = client_secret
+            self._credentials_source = "direct_parameters"
         elif CREDENTIALS_MANAGER_AVAILABLE:
-            # Use credentials manager
             manager = CredentialsManager(credentials_file or "credentials.json")
             self.client_id, self.client_secret = manager.load(interactive=False)
+            if self.client_id and self.client_secret:
+                # Determine which source the manager used
+                creds_path = credentials_file or "credentials.json"
+                if os.path.exists(creds_path):
+                    self._credentials_source = f"json_file:{creds_path}"
+                elif os.getenv("DERIBIT_CLIENT_ID"):
+                    self._credentials_source = "environment_variables"
+                elif os.path.exists(".env"):
+                    self._credentials_source = "dotenv_file"
+                else:
+                    self._credentials_source = "credentials_manager"
         else:
-            # Fall back to environment variables
             self.client_id = client_id or os.getenv('DERIBIT_CLIENT_ID')
             self.client_secret = client_secret or os.getenv('DERIBIT_CLIENT_SECRET')
+            if self.client_id and self.client_secret:
+                self._credentials_source = "environment_variables"
 
         if not self.client_id or not self.client_secret:
             raise ValueError(
@@ -89,12 +112,24 @@ class DeribitAuth:
                 "See README.md for detailed setup instructions."
             )
 
+        self.test_mode = test_mode
         self.base_url = "https://test.deribit.com" if test_mode else "https://www.deribit.com"
+        self._environment = "test" if test_mode else "production"
         self.access_token = None
         self.refresh_token = None
         self.token_expiry = None
         self.scope = None
         self.session = requests.Session()
+
+        # Log session start
+        if self.logger:
+            self.logger.log_auth(
+                event="session_start",
+                client_id=self.client_id,
+                credentials_source=self._credentials_source,
+                environment=self._environment,
+                base_url=self.base_url,
+            )
 
     def _generate_nonce(self, length: int = 8) -> str:
         """Generate random nonce for signature authentication"""
@@ -150,24 +185,88 @@ class DeribitAuth:
             "scope": scope
         }
 
-        response = self.session.get(url, params=params)
-        response.raise_for_status()
+        start_time = time.time()
+        try:
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            latency_ms = (time.time() - start_time) * 1000
 
-        result = response.json()
+            result = response.json()
 
-        if "result" in result:
-            self.access_token = result["result"]["access_token"]
-            self.refresh_token = result["result"]["refresh_token"]
-            self.token_expiry = time.time() + result["result"]["expires_in"]
-            self.scope = result["result"]["scope"]
+            if "result" in result:
+                self.access_token = result["result"]["access_token"]
+                self.refresh_token = result["result"]["refresh_token"]
+                self.token_expiry = time.time() + result["result"]["expires_in"]
+                self.scope = result["result"]["scope"]
 
-            print(f"Authenticated successfully")
-            print(f"  Scope: {self.scope}")
-            print(f"  Expires in: {result['result']['expires_in']} seconds")
+                print(f"Authenticated successfully")
+                print(f"  Scope: {self.scope}")
+                print(f"  Expires in: {result['result']['expires_in']} seconds")
 
-            return result["result"]
-        else:
-            raise Exception(f"Authentication failed: {result}")
+                if self.logger:
+                    self.logger.log_auth(
+                        event="auth_credentials",
+                        client_id=self.client_id,
+                        method="client_credentials",
+                        scope_requested=scope,
+                        scope_granted=self.scope,
+                        token_expires_in=result["result"]["expires_in"],
+                        access_token=self.access_token,
+                        credentials_source=self._credentials_source,
+                        status="success",
+                        latency_ms=latency_ms,
+                        environment=self._environment,
+                        base_url=self.base_url,
+                        api_method="public/auth",
+                    )
+
+                return result["result"]
+            else:
+                error = Exception(f"Authentication failed: {result}")
+                if self.logger:
+                    api_error = result.get("error", {})
+                    self.logger.log_auth(
+                        event="auth_failure",
+                        client_id=self.client_id,
+                        method="client_credentials",
+                        scope_requested=scope,
+                        credentials_source=self._credentials_source,
+                        status="error",
+                        latency_ms=latency_ms,
+                        error=DeribitLogger.format_error(
+                            exception=error,
+                            error_code=api_error.get("code"),
+                            error_message=api_error.get("message"),
+                            http_status=response.status_code,
+                        ),
+                        environment=self._environment,
+                        base_url=self.base_url,
+                        api_method="public/auth",
+                    )
+                raise error
+
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+            if self.logger and not isinstance(e, Exception.__class__):
+                # Log network/HTTP errors (API errors already logged above)
+                http_status = getattr(getattr(e, "response", None), "status_code", None)
+                self.logger.log_auth(
+                    event="auth_failure",
+                    client_id=self.client_id,
+                    method="client_credentials",
+                    scope_requested=scope,
+                    credentials_source=self._credentials_source,
+                    status="error",
+                    latency_ms=latency_ms,
+                    error=DeribitLogger.format_error(
+                        exception=e,
+                        http_status=http_status,
+                    ),
+                    environment=self._environment,
+                    base_url=self.base_url,
+                    api_method="public/auth",
+                )
+            raise
 
     def authenticate_signature(self, scope: str = "session:default", data: str = "") -> Dict[str, Any]:
         """
@@ -198,24 +297,87 @@ class DeribitAuth:
             "scope": scope
         }
 
-        response = self.session.get(url, params=params)
-        response.raise_for_status()
+        start_time = time.time()
+        try:
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            latency_ms = (time.time() - start_time) * 1000
 
-        result = response.json()
+            result = response.json()
 
-        if "result" in result:
-            self.access_token = result["result"]["access_token"]
-            self.refresh_token = result["result"]["refresh_token"]
-            self.token_expiry = time.time() + result["result"]["expires_in"]
-            self.scope = result["result"]["scope"]
+            if "result" in result:
+                self.access_token = result["result"]["access_token"]
+                self.refresh_token = result["result"]["refresh_token"]
+                self.token_expiry = time.time() + result["result"]["expires_in"]
+                self.scope = result["result"]["scope"]
 
-            print(f"Authenticated with signature")
-            print(f"  Scope: {self.scope}")
-            print(f"  Expires in: {result['result']['expires_in']} seconds")
+                print(f"Authenticated with signature")
+                print(f"  Scope: {self.scope}")
+                print(f"  Expires in: {result['result']['expires_in']} seconds")
 
-            return result["result"]
-        else:
-            raise Exception(f"Authentication failed: {result}")
+                if self.logger:
+                    self.logger.log_auth(
+                        event="auth_signature",
+                        client_id=self.client_id,
+                        method="client_signature",
+                        scope_requested=scope,
+                        scope_granted=self.scope,
+                        token_expires_in=result["result"]["expires_in"],
+                        access_token=self.access_token,
+                        credentials_source=self._credentials_source,
+                        status="success",
+                        latency_ms=latency_ms,
+                        environment=self._environment,
+                        base_url=self.base_url,
+                        api_method="public/auth",
+                    )
+
+                return result["result"]
+            else:
+                error = Exception(f"Authentication failed: {result}")
+                if self.logger:
+                    api_error = result.get("error", {})
+                    self.logger.log_auth(
+                        event="auth_failure",
+                        client_id=self.client_id,
+                        method="client_signature",
+                        scope_requested=scope,
+                        credentials_source=self._credentials_source,
+                        status="error",
+                        latency_ms=latency_ms,
+                        error=DeribitLogger.format_error(
+                            exception=error,
+                            error_code=api_error.get("code"),
+                            error_message=api_error.get("message"),
+                            http_status=response.status_code,
+                        ),
+                        environment=self._environment,
+                        base_url=self.base_url,
+                        api_method="public/auth",
+                    )
+                raise error
+
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+            if self.logger and not isinstance(e, Exception.__class__):
+                http_status = getattr(getattr(e, "response", None), "status_code", None)
+                self.logger.log_auth(
+                    event="auth_failure",
+                    client_id=self.client_id,
+                    method="client_signature",
+                    scope_requested=scope,
+                    credentials_source=self._credentials_source,
+                    status="error",
+                    latency_ms=latency_ms,
+                    error=DeribitLogger.format_error(
+                        exception=e,
+                        http_status=http_status,
+                    ),
+                    environment=self._environment,
+                    base_url=self.base_url,
+                    api_method="public/auth",
+                )
+            raise
 
     def refresh_access_token(self) -> Dict[str, Any]:
         """
@@ -234,22 +396,81 @@ class DeribitAuth:
             "refresh_token": self.refresh_token
         }
 
-        response = self.session.get(url, params=params)
-        response.raise_for_status()
+        start_time = time.time()
+        try:
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            latency_ms = (time.time() - start_time) * 1000
 
-        result = response.json()
+            result = response.json()
 
-        if "result" in result:
-            self.access_token = result["result"]["access_token"]
-            self.refresh_token = result["result"]["refresh_token"]
-            self.token_expiry = time.time() + result["result"]["expires_in"]
+            if "result" in result:
+                self.access_token = result["result"]["access_token"]
+                self.refresh_token = result["result"]["refresh_token"]
+                self.token_expiry = time.time() + result["result"]["expires_in"]
 
-            print(f"Token refreshed")
-            print(f"  Expires in: {result['result']['expires_in']} seconds")
+                print(f"Token refreshed")
+                print(f"  Expires in: {result['result']['expires_in']} seconds")
 
-            return result["result"]
-        else:
-            raise Exception(f"Token refresh failed: {result}")
+                if self.logger:
+                    self.logger.log_auth(
+                        event="token_refresh",
+                        client_id=self.client_id,
+                        method="refresh_token",
+                        token_expires_in=result["result"]["expires_in"],
+                        access_token=self.access_token,
+                        credentials_source=self._credentials_source,
+                        status="success",
+                        latency_ms=latency_ms,
+                        environment=self._environment,
+                        base_url=self.base_url,
+                        api_method="public/auth",
+                    )
+
+                return result["result"]
+            else:
+                error = Exception(f"Token refresh failed: {result}")
+                if self.logger:
+                    api_error = result.get("error", {})
+                    self.logger.log_auth(
+                        event="token_refresh",
+                        client_id=self.client_id,
+                        method="refresh_token",
+                        credentials_source=self._credentials_source,
+                        status="error",
+                        latency_ms=latency_ms,
+                        error=DeribitLogger.format_error(
+                            exception=error,
+                            error_code=api_error.get("code"),
+                            error_message=api_error.get("message"),
+                            http_status=response.status_code,
+                        ),
+                        environment=self._environment,
+                        base_url=self.base_url,
+                        api_method="public/auth",
+                    )
+                raise error
+
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+            if self.logger and not isinstance(e, Exception.__class__):
+                http_status = getattr(getattr(e, "response", None), "status_code", None)
+                self.logger.log_auth(
+                    event="token_refresh",
+                    client_id=self.client_id,
+                    method="refresh_token",
+                    credentials_source=self._credentials_source,
+                    status="error",
+                    latency_ms=latency_ms,
+                    error=DeribitLogger.format_error(
+                        exception=e,
+                        http_status=http_status,
+                    ),
+                    environment=self._environment,
+                    base_url=self.base_url,
+                    api_method="public/auth",
+                )
+            raise
 
     def is_token_valid(self, buffer_seconds: int = 60) -> bool:
         """
@@ -275,6 +496,14 @@ class DeribitAuth:
         """
         if not self.is_token_valid():
             if self.refresh_token:
+                if self.logger:
+                    self.logger.log_auth(
+                        event="token_expired",
+                        client_id=self.client_id,
+                        access_token=self.access_token,
+                        environment=self._environment,
+                        base_url=self.base_url,
+                    )
                 self.refresh_access_token()
             else:
                 raise Exception("Token expired and no refresh token available")
@@ -316,8 +545,14 @@ def main():
     print("Deribit Test API Authentication Demo")
     print("=" * 60)
 
+    # Initialize logger
+    logger = None
+    if LOGGER_AVAILABLE:
+        logger = DeribitLogger()
+        print(f"Logging to: {logger.log_dir}")
+
     # Initialize auth (reads from environment variables)
-    auth = DeribitAuth(test_mode=True)
+    auth = DeribitAuth(test_mode=True, logger=logger)
 
     # Method 1: Client Credentials (simplest)
     print("\n[Method 1] Client Credentials Authentication")
@@ -335,7 +570,7 @@ def main():
     # Method 2: Client Signature (more secure)
     print("\n[Method 2] Client Signature Authentication")
     print("-" * 60)
-    auth2 = DeribitAuth(test_mode=True)
+    auth2 = DeribitAuth(test_mode=True, logger=logger)
     auth2.authenticate_signature(scope="trade:read_write session:signature_demo")
 
     # Method 3: Refresh Token
