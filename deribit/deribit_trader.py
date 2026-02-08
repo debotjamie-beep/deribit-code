@@ -8,13 +8,60 @@ Includes functions for:
 - Managing positions
 - Getting account information
 
+All operations are logged to structured JSONL files when a logger is provided.
+
 Author: API Developer
 Environment: Deribit Test (test.deribit.com)
 """
 
+import time
 import requests
 from typing import Dict, Any, List, Optional
 from deribit_auth import DeribitAuth
+
+try:
+    from deribit_logger import DeribitLogger
+    LOGGER_AVAILABLE = True
+except ImportError:
+    LOGGER_AVAILABLE = False
+
+# API methods that are trade actions (logged to trades_*.jsonl)
+_TRADE_METHODS = {
+    "private/buy",
+    "private/sell",
+    "private/cancel",
+    "private/edit",
+    "private/close_position",
+    "private/cancel_all",
+    "private/cancel_all_by_currency",
+    "private/cancel_all_by_instrument",
+}
+
+# Mapping from API method to human-readable event name for API logs
+_API_EVENT_NAMES = {
+    "private/get_account_summary": "account_summary",
+    "private/get_positions": "get_positions",
+    "private/get_open_orders_by_currency": "get_open_orders",
+    "private/get_open_orders_by_instrument": "get_open_orders",
+    "private/get_subaccounts": "get_subaccounts",
+    "private/get_user_trades_by_currency": "get_user_trades",
+    "private/get_user_trades_by_instrument": "get_user_trades",
+    "public/get_instruments": "get_instruments",
+    "public/get_order_book": "get_order_book",
+    "public/ticker": "get_ticker",
+}
+
+# Mapping from API method to trade action name
+_TRADE_ACTION_NAMES = {
+    "private/buy": "buy",
+    "private/sell": "sell",
+    "private/cancel": "cancel",
+    "private/edit": "edit",
+    "private/close_position": "close_position",
+    "private/cancel_all": "cancel_all",
+    "private/cancel_all_by_currency": "cancel_all",
+    "private/cancel_all_by_instrument": "cancel_all",
+}
 
 
 class DeribitTrader:
@@ -22,6 +69,7 @@ class DeribitTrader:
     Deribit Trading Interface
 
     Provides high-level trading functions using authenticated API access.
+    All operations are logged when a DeribitLogger is available via auth.logger.
     """
 
     def __init__(self, auth: DeribitAuth):
@@ -33,10 +81,15 @@ class DeribitTrader:
         """
         self.auth = auth
         self.base_url = auth.base_url
+        self.logger = getattr(auth, "logger", None)
+        self._environment = getattr(auth, "_environment", "test")
 
     def _make_request(self, method: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Make authenticated API request
+        Make authenticated API request with automatic logging.
+
+        Trade actions (buy/sell/cancel/edit/close) are logged to trades_*.jsonl.
+        All other API calls are logged to api_*.jsonl.
 
         Args:
             method: API method name (e.g., 'private/buy')
@@ -46,24 +99,142 @@ class DeribitTrader:
             API response result
         """
         url = f"{self.base_url}/api/v2/{method}"
-
         headers = self.auth.get_headers() if method.startswith("private/") else {}
+        is_trade = method in _TRADE_METHODS
 
-        response = self.auth.session.get(
-            url,
-            params=params,
-            headers=headers
-        )
-        response.raise_for_status()
+        start_time = time.time()
+        try:
+            response = self.auth.session.get(
+                url,
+                params=params,
+                headers=headers
+            )
+            response.raise_for_status()
+            latency_ms = (time.time() - start_time) * 1000
 
-        result = response.json()
+            result = response.json()
 
-        if "result" in result:
-            return result["result"]
-        elif "error" in result:
-            raise Exception(f"API Error: {result['error']}")
-        else:
-            raise Exception(f"Unexpected response: {result}")
+            if "result" in result:
+                api_result = result["result"]
+
+                # Log success
+                if self.logger:
+                    if is_trade:
+                        self.logger.log_trade(
+                            action=_TRADE_ACTION_NAMES.get(method, method),
+                            request_params=params,
+                            api_method=method,
+                            response=api_result,
+                            latency_ms=latency_ms,
+                            environment=self._environment,
+                            base_url=self.base_url,
+                        )
+                    else:
+                        self.logger.log_api(
+                            event=_API_EVENT_NAMES.get(method, method),
+                            api_method=method,
+                            request_params=params,
+                            response=api_result,
+                            latency_ms=latency_ms,
+                            environment=self._environment,
+                            base_url=self.base_url,
+                        )
+
+                return api_result
+
+            elif "error" in result:
+                api_error = result["error"]
+                error = Exception(f"API Error: {api_error}")
+
+                # Log API error
+                if self.logger:
+                    error_dict = DeribitLogger.format_error(
+                        exception=error,
+                        error_code=api_error.get("code") if isinstance(api_error, dict) else None,
+                        error_message=api_error.get("message") if isinstance(api_error, dict) else str(api_error),
+                        http_status=response.status_code,
+                    )
+                    if is_trade:
+                        self.logger.log_trade(
+                            action=_TRADE_ACTION_NAMES.get(method, method),
+                            request_params=params,
+                            api_method=method,
+                            error=error_dict,
+                            latency_ms=latency_ms,
+                            environment=self._environment,
+                            base_url=self.base_url,
+                        )
+                    else:
+                        self.logger.log_api(
+                            event="api_error",
+                            api_method=method,
+                            request_params=params,
+                            error=error_dict,
+                            latency_ms=latency_ms,
+                            environment=self._environment,
+                            base_url=self.base_url,
+                        )
+
+                raise error
+            else:
+                error = Exception(f"Unexpected response: {result}")
+                if self.logger:
+                    error_dict = DeribitLogger.format_error(
+                        exception=error,
+                        http_status=response.status_code,
+                    )
+                    if is_trade:
+                        self.logger.log_trade(
+                            action=_TRADE_ACTION_NAMES.get(method, method),
+                            request_params=params,
+                            api_method=method,
+                            error=error_dict,
+                            latency_ms=latency_ms,
+                            environment=self._environment,
+                            base_url=self.base_url,
+                        )
+                    else:
+                        self.logger.log_api(
+                            event="api_error",
+                            api_method=method,
+                            request_params=params,
+                            error=error_dict,
+                            latency_ms=latency_ms,
+                            environment=self._environment,
+                            base_url=self.base_url,
+                        )
+                raise error
+
+        except Exception as e:
+            latency_ms = (time.time() - start_time) * 1000
+            # Log network/HTTP errors (only if not already logged above)
+            if self.logger and not str(e).startswith(("API Error:", "Unexpected response:")):
+                http_status = getattr(getattr(e, "response", None), "status_code", None)
+                error_dict = DeribitLogger.format_error(
+                    exception=e,
+                    http_status=http_status,
+                )
+                if is_trade:
+                    self.logger.log_trade(
+                        action=_TRADE_ACTION_NAMES.get(method, method),
+                        request_params=params,
+                        api_method=method,
+                        error=error_dict,
+                        latency_ms=latency_ms,
+                        environment=self._environment,
+                        base_url=self.base_url,
+                    )
+                else:
+                    self.logger.log_api(
+                        event="api_error",
+                        api_method=method,
+                        request_params=params,
+                        error=error_dict,
+                        latency_ms=latency_ms,
+                        environment=self._environment,
+                        base_url=self.base_url,
+                    )
+            raise
 
     # =================================================================
     # ACCOUNT INFORMATION
@@ -426,8 +597,14 @@ def main():
     print("Deribit Trading Functions Demo")
     print("=" * 70)
 
+    # Initialize logger
+    logger = None
+    if LOGGER_AVAILABLE:
+        logger = DeribitLogger()
+        print(f"Logging to: {logger.log_dir}")
+
     # Initialize authentication
-    auth = DeribitAuth(test_mode=True)
+    auth = DeribitAuth(test_mode=True, logger=logger)
     auth.authenticate_credentials(scope="trade:read_write session:trading_demo")
 
     # Initialize trader
@@ -556,6 +733,8 @@ def main():
 
     print("\n" + "=" * 70)
     print("Demo completed!")
+    if logger:
+        print(f"Logs written to: {logger.log_dir}")
     print("=" * 70)
 
 
