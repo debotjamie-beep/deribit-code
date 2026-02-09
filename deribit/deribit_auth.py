@@ -521,7 +521,7 @@ class DeribitAuth:
             Account summary or error
         """
         url = f"{self.base_url}/api/v2/private/get_account_summary"
-        params = {"currency": "BTC", "extended": True}
+        params = {"currency": "BTC", "extended": "true"}
 
         response = self.session.get(url, params=params, headers=self.get_headers())
         response.raise_for_status()
