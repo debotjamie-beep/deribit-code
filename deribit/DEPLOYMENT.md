@@ -14,20 +14,20 @@
 ### 1. Clean any previous installation
 
 ```bash
-rm -rf deribit-code
+rm -rf ~/skills/deribit
 ```
 
-### 2. Clone the repository
+### 2. Clone the repository into the skills directory
 
 ```bash
-git clone https://github.com/debotjamie-beep/deribit-code.git
-cd deribit-code
+mkdir -p ~/skills
+git clone https://github.com/debotjamie-beep/deribit-code.git ~/skills/deribit
 ```
 
 ### 3. Install dependencies
 
 ```bash
-pip install -r deribit/requirements.txt
+pip install -r ~/skills/deribit/deribit/requirements.txt
 ```
 
 ### 4. Set up credentials
@@ -35,16 +35,16 @@ pip install -r deribit/requirements.txt
 For **test environment** (test.deribit.com):
 
 ```bash
-cp /Users/jamiedebot/.openclaw/secrets/deribit_test.json deribit/credentials.json
+cp /Users/jamiedebot/.openclaw/secrets/deribit_test.json ~/skills/deribit/deribit/credentials.json
 ```
 
 For **production** (www.deribit.com) — only when fully tested and ready:
 
 ```bash
-cp /Users/jamiedebot/.openclaw/secrets/deribit.json deribit/credentials.json
+cp /Users/jamiedebot/.openclaw/secrets/deribit.json ~/skills/deribit/deribit/credentials.json
 ```
 
-Verify `deribit/credentials.json` has this format:
+Verify `~/skills/deribit/deribit/credentials.json` has this format:
 
 ```json
 {
@@ -59,11 +59,13 @@ If the JSON keys are named differently (e.g. `clientId` instead of `client_id`),
 
 **Never commit `credentials.json` to git** — it is already in `.gitignore`.
 
-### 5. Verify authentication works
+### 5. Verify authentication and logging works
 
 ```bash
-cd deribit && python test_with_credentials.py
+cd ~/skills/deribit/deribit && python test_with_credentials.py
 ```
+
+This will also create the log directory at `~/deribit/logs/` and write initial auth and API log entries.
 
 Expected output:
 
