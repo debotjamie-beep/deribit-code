@@ -2,6 +2,7 @@
 Test script for Deribit API authentication
 
 This script tests all authentication methods using your credentials.
+It also initializes the logger so all events are recorded to ~/deribit/logs/.
 
 Setup your credentials first (choose one method):
 1. Create credentials.json file (recommended)
@@ -13,11 +14,17 @@ See README.md for detailed instructions.
 
 from deribit_auth import DeribitAuth
 from deribit_trader import DeribitTrader
+from deribit_logger import DeribitLogger
 
 def main():
     print("=" * 70)
     print("Testing Deribit Authentication")
     print("=" * 70)
+    print()
+
+    # Initialize logger — all events will be written to ~/deribit/logs/
+    logger = DeribitLogger()
+    print(f"Logging to: {logger.log_dir}")
     print()
 
     # Step 1: Test Client Credentials Authentication
@@ -28,7 +35,7 @@ def main():
         # 1. credentials.json
         # 2. Environment variables
         # 3. .env file
-        auth = DeribitAuth(test_mode=True)
+        auth = DeribitAuth(test_mode=True, logger=logger)
 
         result = auth.authenticate_credentials(scope="trade:read_write session:test")
 
@@ -83,7 +90,7 @@ def main():
     print("Step 4: Testing Client Signature Authentication")
     print("-" * 70)
     try:
-        auth2 = DeribitAuth(test_mode=True)
+        auth2 = DeribitAuth(test_mode=True, logger=logger)
 
         auth2.authenticate_signature(scope="trade:read_write session:signature_test")
         print("Signature Authentication Successful!")
@@ -111,6 +118,7 @@ def main():
     print("=" * 70)
     print("\nYour authentication module is working correctly!")
     print("You can now use it to trade on Deribit test environment.")
+    print(f"\nLogs written to: {logger.log_dir}")
 
 if __name__ == "__main__":
     main()
