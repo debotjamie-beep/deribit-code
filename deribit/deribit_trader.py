@@ -102,11 +102,21 @@ class DeribitTrader:
         headers = self.auth.get_headers() if method.startswith("private/") else {}
         is_trade = method in _TRADE_METHODS
 
+        # Deribit expects lowercase "true"/"false" for booleans in query params.
+        # Python's requests library serializes True as "True" (capital T) which
+        # causes 400 errors. Convert all booleans to lowercase strings.
+        sanitized_params = {}
+        for k, v in params.items():
+            if isinstance(v, bool):
+                sanitized_params[k] = str(v).lower()
+            else:
+                sanitized_params[k] = v
+
         start_time = time.time()
         try:
             response = self.auth.session.get(
                 url,
-                params=params,
+                params=sanitized_params,
                 headers=headers
             )
             response.raise_for_status()
